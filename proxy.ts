@@ -14,6 +14,16 @@ function redirectTo(request: NextRequest, pathname: string) {
   return NextResponse.redirect(url);
 }
 
+function denyRequest(request: NextRequest, status: number, message: string, redirectPath: string) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: message }, {
+      status,
+      headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+    });
+  }
+  return redirectTo(request, redirectPath);
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -24,9 +34,10 @@ export async function proxy(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseKey) {
     // Local setup preview is allowed only in development. Production is fail-closed.
-    if (process.env.NODE_ENV === "production") {
-      return redirectTo(request, "/setup-required");
+    if (pathname.startsWith("/api/")) {
+      return denyRequest(request, 503, "Authentication is not configured.", "/setup-required");
     }
+    if (process.env.NODE_ENV === "production") return redirectTo(request, "/setup-required");
     return NextResponse.next();
   }
 
@@ -48,7 +59,7 @@ export async function proxy(request: NextRequest) {
   const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims?.sub) {
-    return redirectTo(request, "/login");
+    return denyRequest(request, 401, "Authentication required.", "/login");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -63,7 +74,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!profile || profile.is_active !== true) {
-    return redirectTo(request, "/no-access");
+    return denyRequest(request, 403, "Access is not enabled for this account.", "/no-access");
   }
 
   const { data: canReadDashboard, error: permissionError } = await supabase.rpc(
