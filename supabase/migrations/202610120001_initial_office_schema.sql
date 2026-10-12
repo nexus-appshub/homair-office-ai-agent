@@ -436,10 +436,9 @@ for select to authenticated
 using (user_id = auth.uid() or public.is_office_admin());
 
 drop policy if exists "admin manages profiles" on public.user_profiles;
-create policy "admin manages profiles" on public.user_profiles
-for update to authenticated
-using (public.is_office_admin())
-with check (public.is_office_admin());
+-- Intentionally no authenticated INSERT or UPDATE policy for user_profiles.
+-- Do not allow a browser session to grant roles or activate accounts. Role changes
+-- remain an owner-only SQL-editor operation until an audited admin service exists.
 
 drop policy if exists "admin reads permission catalog" on public.office_permissions;
 create policy "admin reads permission catalog" on public.office_permissions
