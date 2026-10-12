@@ -367,8 +367,26 @@ export default function OfficeDashboard() {
                   ].map(([title, category, priority]) => <div className="queue-item" key={title}><span className="queue-check"><Check size={13}/></span><div className="queue-copy"><strong>{title}</strong><span>{category}</span></div><span className={"priority priority-" + priority.toLowerCase()}>{priority}</span></div>)}</div>
                 </section>
                 <section className="card-surface activity-card">
-                  <div className="section-heading"><div><h2>Recent activity</h2><p>Verified application events</p></div><Activity size={18} className="muted-icon"/></div>
-                  <div className="empty-activity"><div className="empty-icon"><Clock3 size={20}/></div><strong>No activity recorded yet</strong><p>Activity will appear once users authenticate and audited workflows are enabled.</p></div>
+                  <div className="section-heading"><div><h2>Recent activity</h2><p>Latest authorized audit events</p></div><Activity size={18} className="muted-icon"/></div>
+                  {!summary || summary.recentActivity.status === "unavailable" ? (
+                    <div className="empty-activity"><div className="empty-icon"><Clock3 size={20}/></div><strong>Activity unavailable</strong><p>Connect the database and apply the current migration to load verified audit events.</p></div>
+                  ) : summary.recentActivity.status === "restricted" ? (
+                    <div className="empty-activity"><div className="empty-icon"><LockKeyhole size={20}/></div><strong>Audit access restricted</strong><p>Your role does not have permission to view the audit trail.</p></div>
+                  ) : summary.recentActivity.items.length === 0 ? (
+                    <div className="empty-activity"><div className="empty-icon"><Clock3 size={20}/></div><strong>No activity recorded yet</strong><p>Audited workspace events will appear here when they occur.</p></div>
+                  ) : (
+                    <div className="queue-list">
+                      {summary.recentActivity.items.map((event) => (
+                        <div className="queue-item" key={event.id}>
+                          <span className="queue-check"><Activity size={13}/></span>
+                          <div className="queue-copy">
+                            <strong>{event.event_type.replace(/[._]/g, " ")}</strong>
+                            <span>{[event.resource_type, event.outcome].filter(Boolean).join(" · ")} · {new Date(event.created_at).toLocaleString("en-GB", { timeZone: "Asia/Dhaka" })}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               </div>
             </>
