@@ -77,22 +77,22 @@ export async function GET() {
 
   const [supportInbox, customerRecords, pendingApprovals, scheduledContent, activity] =
     await Promise.all([
-      countMetric(supabase, "support.read", async () => await
+      countMetric(supabase, "support.read", async () =>
         supabase
           .from("support_tickets")
           .select("id", { count: "exact", head: true })
           .in("status", ["open", "in_progress", "waiting_customer", "escalated"]),
       ),
-      countMetric(supabase, "customers.read", async () => await
+      countMetric(supabase, "customers.read", async () =>
         supabase.from("customer_records").select("id", { count: "exact", head: true }),
       ),
-      countMetric(supabase, "approvals.read", async () => await
+      countMetric(supabase, "approvals.read", async () =>
         supabase
           .from("approval_requests")
           .select("id", { count: "exact", head: true })
           .eq("status", "pending"),
       ),
-      countMetric(supabase, "marketing.read", async () => await
+      countMetric(supabase, "marketing.read", async () =>
         supabase
           .from("campaigns")
           .select("id", { count: "exact", head: true })
