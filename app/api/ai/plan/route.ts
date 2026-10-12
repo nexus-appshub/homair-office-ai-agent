@@ -82,6 +82,10 @@ export async function POST(request: Request) {
     }, { headers: { "Cache-Control": "no-store" } });
   }
 
+  const { data: quotaAllowed, error: quotaError } = await supabase.rpc("consume_ai_plan_quota");
+  if (quotaError) return jsonError("The persistent AI rate-limit guard is not ready. Apply the latest database migration before using AI.", 503);
+  if (quotaAllowed !== true) return jsonError("AI planning limit reached: maximum 10 plans per user per hour. Try again later.", 429);
+
   const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   const ai = new GoogleGenAI({ apiKey });
   const systemInstruction = [
