@@ -602,12 +602,12 @@ begin
     coalesce(p_requires_approval, false)
     or lower(coalesce(p_result->>'requiresApproval', 'false')) = 'true'
     or coalesce(p_result->>'riskLevel', 'low') <> 'low'
-    or p_description ~* '\\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\\M';
+    or p_description ~* '\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\M';
 
   v_priority := case
     when coalesce(p_result->>'riskLevel', 'low') = 'critical' then 'critical'
     when coalesce(p_result->>'riskLevel', 'low') = 'high'
-      or p_description ~* '\\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\\M'
+      or p_description ~* '\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\M'
       then 'high'
     else p_priority
   end;
