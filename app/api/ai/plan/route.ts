@@ -70,12 +70,24 @@ export async function POST(request: Request) {
   if (existing) {
     let plan: unknown;
     try { plan = JSON.parse(existing.result_summary ?? "{}"); } catch { plan = {}; }
+    let approvalId: string | null = null;
+    if (existing.requires_approval) {
+      const { data: approval } = await supabase
+        .from("approval_requests")
+        .select("id")
+        .eq("task_id", existing.id)
+        .eq("status", "pending")
+        .maybeSingle();
+      approvalId = approval?.id ?? null;
+    }
+
     return NextResponse.json({
       task: {
         id: existing.id, title: existing.title, department: existing.department,
         status: existing.status, priority: existing.priority,
         requires_approval: existing.requires_approval, created_at: existing.created_at,
       },
+      approval_id: approvalId,
       plan,
       reused: true,
       note: "Previously saved plan returned. No external action was executed.",
