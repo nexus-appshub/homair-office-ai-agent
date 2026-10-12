@@ -131,7 +131,6 @@ begin
         'task_id', v_task.id,
         'title', v_task.title,
         'department', v_task.department,
-        'request_summary', left(p_description, 2000),
         'plan', p_result,
         'execution_note', 'Approval records review only. No external action is executed by this workflow.'
       );
