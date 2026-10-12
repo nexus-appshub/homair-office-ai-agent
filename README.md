@@ -36,7 +36,7 @@ npm run lint
 npm run build
 ```
 
-The repository CI workflow runs these checks on pushes and pull requests.
+The repository CI workflow runs these checks on pushes and pull requests. The command center currently supports an authenticated, quota-limited Gemini plan-generation endpoint; it saves the plan and its audit event, but does not execute downstream actions.
 
 ## Supabase setup (required for authenticated access)
 
