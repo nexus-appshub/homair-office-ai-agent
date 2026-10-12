@@ -35,12 +35,15 @@ This is a candidate integration, not yet an approved or security-verified API co
 - Create a restricted server-to-server integration credential or signed authentication mechanism if the existing backend supports one; do not rely on caller-supplied email alone.
 - Start with read-only lookups. Do not enable VIP grants/extensions/suspensions or payment approval until exact-action approval, permissions, idempotency, and audit logging are implemented and tested.
 
-**Recommended ownership boundary, pending owner confirmation:**
-- Keep Supabase as the Home Air AI Office store for office staff login, office roles, tasks, approvals, campaign drafts, integration health, and office audit events.
-- Keep the existing Home Air TV data source as the authority for existing customers, packages/VIP plans, subscriptions/entitlements, and payment/order records if that is where those records are currently maintained.
-- Do not migrate, mirror, or write business records until the source of truth is explicitly confirmed. If summary data is copied into the office database later, retain external IDs, timestamps, provenance, and reconciliation behavior.
+**Latest requested target architecture: Supabase becomes the future system of record for customer, package, subscription, order, and payment data.** This is a migration target, not permission to change production records now.
 
-The owner must confirm this boundary before we implement the first business-data adapter.
+Until the owner approves a cutover:
+- The existing Home Air TV Firebase/Firestore/Railway system remains the current production source of truth.
+- Do not connect AI Office to privileged Home Air TV endpoints until its JWT signature-validation fallback and hard-coded authentication fallbacks have been fixed, rotated, and reviewed.
+- Do not import, mirror, update, or delete production business records yet.
+- Supabase remains the active store for office staff login, roles, tasks, approvals, campaign drafts, integration health, and office audit events.
+
+The eventual migration must be staged and reversible: inventory/schema mapping, encrypted backup and baseline counts, dry-run import into an isolated staging project, deterministic external-ID mapping, duplicate detection, record-level reconciliation, role/RLS verification, owner sign-off, maintenance-window cutover, rollback checkpoint, and post-cutover reconciliation. Keep source provenance and original external IDs. Do not dual-write both systems during migration. The owner must approve the migration plan and reconciliation results before production cutover.
 
 ## Customer, package, subscription, order, and payment source
 
