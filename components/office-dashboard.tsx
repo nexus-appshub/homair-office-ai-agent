@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowUpRight, Bell, Bot, CalendarDays, Check,
   ChevronDown, ChevronRight, CircleHelp, ClipboardList, Clock3, Command,
   FileText, Film, Headphones, LayoutDashboard, LockKeyhole, Menu,
   MessageSquare, Palette, Plug, Plus, Search, Send, Settings2, ShieldCheck,
-  Sparkles, Users, Wallet, X, Megaphone,
+  Sparkles, Users, Wallet, X, Megaphone, LogOut,
 } from "lucide-react";
 
 const navGroups = [
@@ -50,12 +50,63 @@ function SetupBadge() {
   return <span className="status-badge"><span className="status-dot" /> Setup required</span>;
 }
 
-function StatCard({ label, note, icon: Icon }: { label: string; note: string; icon: typeof Bot }) {
+type MetricSummary = {
+  value: number | null;
+  status: "ready" | "restricted" | "unavailable";
+};
+
+type WorkspaceSessionUser = {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  role: string;
+};
+
+type DashboardSummary = {
+  generatedAt: string;
+  source: "postgresql";
+  metrics: {
+    supportInbox: MetricSummary;
+    customerRecords: MetricSummary;
+    pendingApprovals: MetricSummary;
+    scheduledContent: MetricSummary;
+  };
+  recentActivity: {
+    status: "ready" | "restricted" | "unavailable";
+    items: Array<{
+      id: string;
+      event_type: string;
+      outcome: string;
+      created_at: string;
+      resource_type: string | null;
+    }>;
+  };
+};
+
+function StatCard({ label, note, icon: Icon, metric }: {
+  label: string;
+  note: string;
+  icon: typeof Bot;
+  metric?: MetricSummary;
+}) {
+  const value = metric?.status === "ready" && typeof metric.value === "number"
+    ? metric.value.toLocaleString()
+    : "—";
+  const detail = !metric
+    ? note
+    : metric.status === "restricted"
+      ? "Not available for your role"
+      : metric.status === "unavailable"
+        ? "Data source unavailable"
+        : metric.value === 0
+          ? "No matching records"
+          : "Live database count";
+
   return (
     <article className="stat-card">
       <div className="stat-top"><span className="stat-label">{label}</span><span className="stat-icon"><Icon size={18} /></span></div>
-      <div className="stat-value pending-value">—</div>
-      <div className="stat-foot"><span className="muted-dot" /> {note}</div>
+      <div className="stat-value pending-value">{value}</div>
+      <div className="stat-foot"><span className="muted-dot" /> {detail}</div>
     </article>
   );
 }
@@ -113,6 +164,53 @@ export default function OfficeDashboard() {
   const [commandLoading, setCommandLoading] = useState(false);
   const [commandError, setCommandError] = useState("");
   const [commandResult, setCommandResult] = useState<PlanResponse | null>(null);
+  const [session, setSession] = useState<WorkspaceSessionUser | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [sessionNotice, setSessionNotice] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    void fetch("/api/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = await response.json() as { user: WorkspaceSessionUser };
+        if (mounted && payload.user) setSession(payload.user);
+      })
+      .catch(() => {
+        // Setup mode intentionally remains usable when authentication is not configured.
+      });
+
+    void fetch("/api/dashboard/summary", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = await response.json() as DashboardSummary;
+        if (mounted) setSummary(payload);
+      })
+      .catch(() => {
+        // Unavailable integrations remain visibly unconfigured rather than fabricated.
+      });
+
+    return () => { mounted = false; };
+  }, []);
+
+  async function handleSignOut() {
+    setSessionNotice("");
+    try {
+      const response = await fetch("/api/auth/signout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        setSessionNotice("Unable to sign out right now. Please retry.");
+        return;
+      }
+      window.location.assign("/login");
+    } catch {
+      setSessionNotice("Unable to reach the sign-out service. Please retry.");
+    }
+  }
+
   const allItems = useMemo(() => navGroups.flatMap((group) => group.items.map((item) => item.label)), []);
   const activeModule = moduleDescriptions[active];
   const ModuleIcon = activeModule?.icon ?? Settings2;
@@ -169,7 +267,7 @@ export default function OfficeDashboard() {
         </div>
         <div className="workspace-switcher">
           <div className="workspace-avatar">HA</div>
-          <div className="workspace-info"><strong>Home Air Workspace</strong><span>Setup preview</span></div>
+          <div className="workspace-info"><strong>Home Air Workspace</strong><span>{session ? session.role.replace(/_/g, " ") : "Setup preview"}</span></div>
           <ChevronDown size={15} className="muted-icon"/>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
@@ -185,10 +283,10 @@ export default function OfficeDashboard() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="security-mini"><ShieldCheck size={17}/><div><strong>Security setup pending</strong><span>No admin actions enabled</span></div></div>
+          <div className="security-mini"><ShieldCheck size={17}/><div><strong>{session ? "Authenticated workspace" : "Security setup pending"}</strong><span>{session ? "Sensitive actions remain approval-gated" : "No admin actions enabled"}</span></div></div>
           <button className={"nav-item " + (active === "Settings" ? "nav-item-active" : "")} onClick={() => selectNav("Settings")}><Settings2 size={17}/><span>Settings & Integrations</span></button>
           <div className="sidebar-profile">
-            <div className="profile-avatar">HA</div><div className="profile-name"><strong>Admin account</strong><span>Authentication not configured</span></div><CircleHelp size={16} className="muted-icon"/>
+            <div className="profile-avatar">HA</div><div className="profile-name"><strong>{session?.displayName || session?.email || "Admin account"}</strong><span>{session ? session.role.replace(/_/g, " ") : "Authentication not configured"}</span></div><CircleHelp size={16} className="muted-icon"/>
           </div>
         </div>
       </aside>
@@ -202,7 +300,9 @@ export default function OfficeDashboard() {
           <div className="topbar-actions">
             <label className="search-box"><Search size={16}/><input aria-label="Search modules" placeholder="Search workspace..." value={query} onChange={(event) => setQuery(event.target.value)} /></label>
             {query && <div className="search-results">{matchingItems.slice(0, 5).map((item) => <button key={item} onClick={() => selectNav(item)}>{item}</button>)}{matchingItems.length === 0 && <span>No matching pages</span>}</div>}
+            {sessionNotice && <span className="command-error" role="alert">{sessionNotice}</span>}
             <button className="icon-button notification-button" aria-label="Notifications" title="Notifications are not configured"><Bell size={18}/><span /></button>
+            {session && <button className="icon-button" onClick={() => void handleSignOut()} aria-label="Sign out" title="Sign out"><LogOut size={18}/></button>}
             <div className="topbar-avatar">HA</div>
           </div>
         </header>
@@ -215,7 +315,7 @@ export default function OfficeDashboard() {
 
           <section className="setup-alert">
             <div className="alert-icon"><AlertTriangle size={18}/></div>
-            <div className="alert-copy"><strong>Workspace setup is not complete</strong><p>This repository has been bootstrapped. Connect authentication and the database before adding real customer or payment data. No external accounts are connected yet.</p></div>
+            <div className="alert-copy"><strong>{session ? "Integration setup is not complete" : "Workspace setup is not complete"}</strong><p>{session ? `Signed in as ${session.email || session.displayName || "an authorized user"}. Real customer/payment operations and external publishing remain disabled until their providers, approval workflows, and audit paths are verified.` : "This repository has been bootstrapped. Connect authentication and the database before adding real customer or payment data."}</p></div>
             <button className="text-button" onClick={() => setShowSetup((value) => !value)}>{showSetup ? "Hide checklist" : "View checklist"} <ChevronRight size={15}/></button>
           </section>
 
@@ -230,10 +330,10 @@ export default function OfficeDashboard() {
             <>
               <div className="section-heading metrics-heading"><div><h2>Workspace health</h2><p>Live metrics appear after trusted sources are connected.</p></div><span className="live-label"><span/> Connection status</span></div>
               <div className="stats-grid">
-                <StatCard label="Support inbox" note="Connect support source" icon={MessageSquare}/>
-                <StatCard label="Customer records" note="Database not connected" icon={Users}/>
-                <StatCard label="Pending approvals" note="Approval service not enabled" icon={ClipboardList}/>
-                <StatCard label="Scheduled content" note="Publishing not connected" icon={Megaphone}/>
+                <StatCard label="Support inbox" note="Connect support source" icon={MessageSquare} metric={summary?.metrics.supportInbox}/>
+                <StatCard label="Customer records" note="Database not connected" icon={Users} metric={summary?.metrics.customerRecords}/>
+                <StatCard label="Pending approvals" note="Approval service not enabled" icon={ClipboardList} metric={summary?.metrics.pendingApprovals}/>
+                <StatCard label="Scheduled content" note="Publishing not connected" icon={Megaphone} metric={summary?.metrics.scheduledContent}/>
               </div>
 
               <div className="content-grid">
@@ -290,7 +390,7 @@ export default function OfficeDashboard() {
             </section>
           )}
 
-          <footer className="footer"><span>© {new Date().getFullYear()} Home Air · AI Office</span><span><ShieldCheck size={13}/> Setup preview <span className="footer-separator">·</span> Asia/Dhaka</span></footer>
+          <footer className="footer"><span>© {new Date().getFullYear()} Home Air · AI Office</span><span><ShieldCheck size={13}/> {session ? "Authenticated workspace" : "Setup preview"} <span className="footer-separator">·</span> Asia/Dhaka</span></footer>
         </div>
       </main>
     </div>

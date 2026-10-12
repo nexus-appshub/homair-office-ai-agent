@@ -4,6 +4,16 @@
 
 The repository was initially empty. The first foundation adds a responsive setup dashboard, safety conventions, a public liveness endpoint, an environment template, and setup documentation. It is **not production-ready** and does not yet perform authenticated business operations.
 
+## Foundation endpoints and dashboard state
+
+The foundation now includes:
+- `GET /api/session`: returns the signed-in user's safe identity and role after the server-side `dashboard.read` permission check.
+- `GET /api/dashboard/summary`: returns aggregate counts for support tickets, customer records, pending approvals, and scheduled campaigns using the signed-in user's Supabase session and RLS policies. Restricted/unavailable metrics are represented as unavailable, not as zero.
+- `POST /api/auth/signout`: ends the current Supabase session.
+- Dashboard wiring for the authenticated identity and aggregate metrics when the database and policies are available.
+
+These are foundation capabilities, not evidence that a real Supabase project has been connected or that production authorization has been security-tested. External business mutations, social publishing, Telegram replies, media rendering, and scheduled execution remain disabled until their separate workflows are built and verified. See [integration intake](INTEGRATION_INTAKE.md) for the specific owner setup information required next.
+
 ## Phase 1 — Secure foundation
 
 - [ ] Select and create the authoritative PostgreSQL/Supabase project.
