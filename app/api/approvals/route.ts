@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       ? payload.plan as Record<string, unknown>
       : {};
     const review = {
-      title: typeof candidate.title === "string" ? candidate.title.slice(0, 160) : (row.task && !Array.isArray(row.task) ? row.task.title : "Proposed task plan"),
+      title: typeof candidate.title === "string" ? candidate.title.slice(0, 160) : "Proposed task plan",
       summary: typeof candidate.summary === "string" ? candidate.summary.slice(0, 1600) : "",
       steps: Array.isArray(candidate.steps)
         ? candidate.steps.filter((step): step is string => typeof step === "string").slice(0, 8).map((step) => step.slice(0, 400))
