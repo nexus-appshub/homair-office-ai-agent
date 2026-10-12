@@ -454,12 +454,17 @@ for select to authenticated using (public.has_office_permission('audit.read'));
 
 drop policy if exists "tasks read permission" on public.office_tasks;
 create policy "tasks read permission" on public.office_tasks
-for select to authenticated using (public.has_office_permission('tasks.read'));
+for select to authenticated
+using (
+  created_by = auth.uid()
+  or assigned_to = auth.uid()
+  or public.has_office_permission('tasks.manage')
+  or public.has_office_permission('audit.read')
+);
 
 drop policy if exists "tasks create own" on public.office_tasks;
-create policy "tasks create own" on public.office_tasks
-for insert to authenticated
-with check (created_by = auth.uid() and public.has_office_permission('tasks.create'));
+-- Task creation goes through create_planned_task(), which validates permission
+-- and writes the task + audit event in one database transaction.
 
 drop policy if exists "tasks manage permission" on public.office_tasks;
 create policy "tasks manage permission" on public.office_tasks
@@ -587,7 +592,7 @@ begin
   if jsonb_typeof(p_result) <> 'object' or pg_column_size(p_result) > 16000 then
     raise exception using errcode = '22023', message = 'Invalid task result';
   end if;
-  if p_idempotency_key !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+  if p_idempotency_key is null or p_idempotency_key !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     raise exception using errcode = '22023', message = 'Invalid idempotency key';
   end if;
 
@@ -633,7 +638,7 @@ begin
       actor_user_id, actor_type, event_type, resource_type, resource_id,
       outcome, correlation_id, safe_metadata
     ) values (
-      auth.uid(), 'user', 'task.plan.created', 'office_task', v_task.id::text,
+      auth.uid(), 'user', 'task.plan.saved', 'office_task', v_task.id::text,
       'success', p_idempotency_key,
       jsonb_build_object(
         'title', left(v_task.title, 120),
