@@ -561,6 +561,8 @@ as $$
 declare
   v_task public.office_tasks%rowtype;
   v_reused boolean := false;
+  v_requires_approval boolean;
+  v_priority text;
 begin
   if auth.uid() is null then
     raise exception using errcode = '42501', message = 'Authentication required';
@@ -589,12 +591,28 @@ begin
     raise exception using errcode = '22023', message = 'Invalid idempotency key';
   end if;
 
+  -- Enforce approval flags in the database as well as the route. The AI cannot
+  -- suppress approval by returning a low-risk classification for sensitive work.
+  v_requires_approval :=
+    coalesce(p_requires_approval, false)
+    or lower(coalesce(p_result->>'requiresApproval', 'false')) = 'true'
+    or coalesce(p_result->>'riskLevel', 'low') <> 'low'
+    or p_description ~* '\\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\\M';
+
+  v_priority := case
+    when coalesce(p_result->>'riskLevel', 'low') = 'critical' then 'critical'
+    when coalesce(p_result->>'riskLevel', 'low') = 'high'
+      or p_description ~* '\\m(publish|post|send|refund|payment|financial|package|subscription|suspend|restore|delete|deploy|production|customer data|bulk|spend|campaign launch|social media|change settings)\\M'
+      then 'high'
+    else p_priority
+  end;
+
   insert into public.office_tasks (
     created_by, title, description, department, status, priority,
     requires_approval, idempotency_key, result_summary
   ) values (
-    auth.uid(), trim(p_title), p_description, p_department, 'succeeded', p_priority,
-    coalesce(p_requires_approval, true), p_idempotency_key, p_result::text
+    auth.uid(), trim(p_title), p_description, p_department, 'succeeded', v_priority,
+    v_requires_approval, p_idempotency_key, p_result::text
   )
   on conflict (idempotency_key) do nothing
   returning * into v_task;
@@ -646,3 +664,48 @@ $$;
 
 revoke all on function public.create_planned_task(text,text,text,text,boolean,jsonb,text) from public, anon;
 grant execute on function public.create_planned_task(text,text,text,text,boolean,jsonb,text) to authenticated;
+
+
+-- Persistent per-user AI budget guard: max 10 plans per hour. The quota is
+-- consumed atomically before the model is called and cannot be reset by a process restart.
+create table if not exists public.ai_usage_windows (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  operation text not null,
+  window_start timestamptz not null,
+  request_count integer not null default 0 check (request_count >= 0),
+  primary key (user_id, operation, window_start)
+);
+alter table public.ai_usage_windows enable row level security;
+-- No direct client read/write policy; only the quota RPC may mutate the table.
+
+create or replace function public.consume_ai_plan_quota()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_window timestamptz := date_trunc('hour', now());
+  v_count integer;
+begin
+  if v_user_id is null then
+    raise exception using errcode = '42501', message = 'Authentication required';
+  end if;
+  if not public.has_office_permission('tasks.create') then
+    raise exception using errcode = '42501', message = 'Task creation permission required';
+  end if;
+
+  insert into public.ai_usage_windows(user_id, operation, window_start, request_count)
+  values (v_user_id, 'ai.plan', v_window, 1)
+  on conflict (user_id, operation, window_start)
+  do update set request_count = public.ai_usage_windows.request_count + 1
+    where public.ai_usage_windows.request_count < 10
+  returning request_count into v_count;
+
+  return v_count is not null;
+end;
+$$;
+
+revoke all on function public.consume_ai_plan_quota() from public, anon;
+grant execute on function public.consume_ai_plan_quota() to authenticated;
