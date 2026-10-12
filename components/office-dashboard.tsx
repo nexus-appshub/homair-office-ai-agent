@@ -8,7 +8,6 @@ import {
   MessageSquare, Palette, Plug, Plus, Search, Send, Settings2, ShieldCheck,
   Sparkles, Users, Wallet, X, Megaphone, LogOut,
 } from "lucide-react";
-import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const navGroups = [
   { label: "WORKSPACE", items: [
