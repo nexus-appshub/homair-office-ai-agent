@@ -12,7 +12,7 @@ The foundation now includes:
 - `POST /api/auth/signout`: ends the current Supabase session.
 - Dashboard wiring for the authenticated identity and aggregate metrics when the database and policies are available.
 
-These are foundation capabilities, not evidence that a real Supabase project has been connected or that production authorization has been security-tested. External business mutations, social publishing, Telegram replies, media rendering, and scheduled execution remain disabled until their separate workflows are built and verified. See [integration intake](INTEGRATION_INTAKE.md) for the specific owner setup information required next.
+These are foundation capabilities, not evidence that a real Supabase project has been connected or that production authorization has been security-tested. The task/approval phase adds `GET /api/tasks`, `GET /api/approvals`, and `POST /api/approvals/{approvalId}/decision`, plus migration `202610120002_task_approval_workflows.sql`. Review decisions are permission-checked, expiry-aware, audited, and never execute an external action. Customer business records, social publishing, Telegram replies, media rendering, and scheduled execution remain disabled until their separate workflows are built and verified. See [integration intake](INTEGRATION_INTAKE.md) for required owner inputs.
 
 ## Phase 1 — Secure foundation
 
@@ -26,11 +26,14 @@ These are foundation capabilities, not evidence that a real Supabase project has
 
 ## Phase 2 — AI core and approvals
 
-- [ ] Use the official `@google/genai` server SDK.
+- [x] Use the official `@google/genai` server SDK for planning only.
 - [ ] Implement a typed tool registry and allowlist; no arbitrary SQL, shell, or unrestricted URL fetches.
-- [ ] Persist tasks, task steps, approvals, and results.
-- [ ] Bind approvals to exact action payloads; reject stale, expired, modified, and replayed actions.
+- [x] Persist task plans, approval requests, decisions, and audit results.
+- [x] Bind review requests to a SHA-256 hash of the stored review payload and reject stale/expired/non-pending decisions.
+- [ ] Add tests proving modified/replayed payloads cannot be executed; no executor exists yet.
 - [ ] Track model usage, timeouts, retries, and sanitized errors.
+
+**Boundary:** the current approval endpoint records a human decision only. It cannot publish, send messages, change business records, issue refunds, or deploy code.
 
 ## Phase 3 — Customer support and operations
 
