@@ -66,6 +66,14 @@ export async function proxy(request: NextRequest) {
     return redirectTo(request, "/no-access");
   }
 
+  const { data: canReadDashboard, error: permissionError } = await supabase.rpc(
+    "has_office_permission",
+    { requested_permission: "dashboard.read" },
+  );
+
+  if (permissionError) return redirectTo(request, "/setup-required");
+  if (canReadDashboard !== true) return redirectTo(request, "/no-access");
+
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
