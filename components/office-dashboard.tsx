@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowUpRight, Bell, Bot, CalendarDays, Check,
@@ -182,6 +183,7 @@ function PlanPanel({ result }: { result: PlanResponse }) {
 }
 
 export default function OfficeDashboard() {
+  const router = useRouter();
   const [active, setActive] = useState("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -281,7 +283,7 @@ export default function OfficeDashboard() {
         setSessionNotice("Unable to sign out right now. Please retry.");
         return;
       }
-      window.location.assign("/login");
+      router.push("/login");
     } catch {
       setSessionNotice("Unable to reach the sign-out service. Please retry.");
     }
