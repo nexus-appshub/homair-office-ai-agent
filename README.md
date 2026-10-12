@@ -2,7 +2,7 @@
 
 A security-first foundation for Home Air's AI-powered business operations dashboard.
 
-> **Current state:** setup-mode scaffold. The responsive dashboard, private sign-in UI, Supabase session gate, initial RLS/schema migration, and liveness endpoint are in place. AI execution, Telegram replies, social publishing, customer/payment mutations, media generation, and scheduled jobs are **not yet enabled**. Do not treat this scaffold as a finished production admin system.
+> **Current state:** setup-mode scaffold. The responsive dashboard, private sign-in UI, Supabase session gate, initial RLS/schema migration, liveness endpoint, authenticated session identity endpoint, and RLS-aware aggregate dashboard summary endpoint are implemented. These database-backed states require a configured Supabase project and applied migration. AI planning currently saves plans only; Telegram replies, social publishing, customer/payment mutations, media rendering, and durable scheduled jobs are **not yet enabled**. Do not treat this scaffold as a finished production admin system.
 
 ## Modules in scope
 
@@ -14,7 +14,7 @@ A security-first foundation for Home Air's AI-powered business operations dashbo
 - Technical monitoring, incidents, daily reports, and reminders
 - Integrations, user administration, RBAC, and audit logs
 
-See [implementation plan](docs/IMPLEMENTATION_PLAN.md), [security posture](docs/SECURITY.md), and [deployment guide](docs/DEPLOYMENT.md).
+See [implementation plan](docs/IMPLEMENTATION_PLAN.md), [security posture](docs/SECURITY.md), [deployment guide](docs/DEPLOYMENT.md), and [integration intake checklist](docs/INTEGRATION_INTAKE.md).
 
 ## Local development
 
