@@ -2,7 +2,7 @@
 
 A security-first foundation for Home Air's AI-powered business operations dashboard.
 
-> **Current state:** setup-mode scaffold. The responsive dashboard, private sign-in UI, Supabase session gate, initial RLS/schema migration, liveness endpoint, authenticated session identity endpoint, and RLS-aware aggregate dashboard summary endpoint are implemented. These database-backed states require a configured Supabase project and applied migration. AI planning currently saves plans only; Telegram replies, social publishing, customer/payment mutations, media rendering, and durable scheduled jobs are **not yet enabled**. Do not treat this scaffold as a finished production admin system.
+> **Current state:** secure foundation plus an initial task/approval workflow. The dashboard supports authenticated identity, RLS-aware summary metrics, saved task listing, approval queue listing, and audited approve/reject decisions. Apply both Supabase migrations to enable task approval records. Approval decisions are recorded only; no external action executes. Customer/payment migration, Telegram replies, social publishing, media rendering, and durable scheduled jobs are **not yet enabled**. Do not treat this scaffold as a finished production admin system.
 
 ## Modules in scope
 
@@ -36,13 +36,13 @@ npm run lint
 npm run build
 ```
 
-The repository CI workflow runs these checks on pushes and pull requests. The command center currently supports an authenticated, quota-limited Gemini plan-generation endpoint; it saves the plan and its audit event, but does not execute downstream actions.
+The repository CI workflow runs these checks on pushes and pull requests. The command center supports an authenticated, quota-limited Gemini plan-generation endpoint. It saves plans and audit events; plans flagged for review create a durable approval request after migration 002 is applied. Approval/rejection is audited, and neither decision executes downstream actions.
 
 ## Supabase setup (required for authenticated access)
 
 1. Create a Supabase project.
 2. In Supabase Authentication, disable public sign-up and manually invite/create only the intended owner and staff accounts.
-3. Open the SQL Editor and run `supabase/migrations/202610120001_initial_office_schema.sql`.
+3. Open the SQL Editor and run `supabase/migrations/202610120001_initial_office_schema.sql`, then run `supabase/migrations/202610120002_task_approval_workflows.sql` in order.
 4. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to local/hosting environment settings. The publishable key is designed for client use; access must still be controlled by Auth and RLS.
 5. Create the first owner profile for an already-created Auth user using the SQL Editor. Replace the email literal with the exact owner account email:
 
@@ -60,6 +60,14 @@ Run that statement only as the project owner in the trusted Supabase SQL Editor.
 6. Set the same public Supabase variables in your local `.env.local` and deployment environment, restart/redeploy, then test login and authorization.
 
 The production proxy redirects to `/setup-required` if Supabase configuration or the role table is unavailable. An authenticated user without an active profile is redirected to `/no-access`. The `/api/health` endpoint only reports basic liveness.
+
+## Task and approval workflow
+
+- `GET /api/tasks` lists only tasks visible to the authenticated user's role/RLS policies; supports an optional `status` and bounded `limit` filter.
+- `GET /api/approvals?status=pending` returns a safe approval queue projection and deliberately omits the internal `action_payload`.
+- `POST /api/approvals/{approvalId}/decision` accepts `approve` or `reject` plus an optional note. The database RPC checks permissions, expiry, pending state, and high/critical self-approval, then records an audit event.
+- An approval changes the review/task status only. There is no executor or external action behind this endpoint. A separate, reviewed execution service must be designed and tested before any approved plan can run.
+- The migration binds the approval to a SHA-256 payload hash and stores no raw task prompt in the approval payload.
 
 ## Credentials and secrets
 

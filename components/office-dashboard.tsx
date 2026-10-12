@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowUpRight, Bell, Bot, CalendarDays, Check,
@@ -134,7 +135,32 @@ type PlanResponse = {
     executionStatus: string;
   };
   reused?: boolean;
+  approval_id?: string | null;
   note: string;
+};
+
+type OfficeTask = {
+  id: string;
+  title: string;
+  department: string;
+  status: string;
+  priority: string;
+  requires_approval: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type ApprovalItem = {
+  id: string;
+  task_id: string | null;
+  action_type: string;
+  explanation: string;
+  risk_level: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  task: { title: string; department: string; priority: string } | null;
+  review: { title: string; summary: string; steps: string[]; approvalReason: string; missingInputs: string[] };
 };
 
 function PlanPanel({ result }: { result: PlanResponse }) {
@@ -146,6 +172,7 @@ function PlanPanel({ result }: { result: PlanResponse }) {
       </div>
       <p className="plan-summary">{result.plan.summary}</p>
       <div className="plan-meta"><span>Task {result.task.id.slice(0, 8)}</span><span>{result.task.department}</span><span>{result.reused ? "Existing request" : "Saved and audited"}</span></div>
+      {result.task.requires_approval && <p className="module-note"><LockKeyhole size={15}/><span>{result.approval_id ? "A human review request was recorded. Open Approvals to review it. Approval records the decision only; no external action is executed." : "This plan requires human review. Apply the task/approval migration to create an approval record. No external action is executed."}</span></p>}
       <h4>Proposed steps</h4>
       <ol className="plan-steps">{result.plan.steps.map((step, index) => <li key={index}><span>{index + 1}</span><p>{step}</p></li>)}</ol>
       {result.plan.requiresApproval && <div className="plan-approval"><LockKeyhole size={16}/><div><strong>Human approval required before consequential actions</strong><p>{result.plan.approvalReason || "Review the plan before carrying out any external action."}</p></div></div>}
@@ -156,6 +183,7 @@ function PlanPanel({ result }: { result: PlanResponse }) {
 }
 
 export default function OfficeDashboard() {
+  const router = useRouter();
   const [active, setActive] = useState("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -167,6 +195,12 @@ export default function OfficeDashboard() {
   const [session, setSession] = useState<WorkspaceSessionUser | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [sessionNotice, setSessionNotice] = useState("");
+  const [officeTasks, setOfficeTasks] = useState<OfficeTask[]>([]);
+  const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [workflowError, setWorkflowError] = useState("");
+  const [workflowNotice, setWorkflowNotice] = useState("");
+  const [workflowRefresh, setWorkflowRefresh] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -194,6 +228,50 @@ export default function OfficeDashboard() {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    if (active !== "Agents & Tasks" && active !== "Approvals") return;
+    let mounted = true;
+    const endpoint = active === "Agents & Tasks" ? "/api/tasks?limit=50" : "/api/approvals?status=pending&limit=50";
+    void fetch(endpoint, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as { tasks?: OfficeTask[]; approvals?: ApprovalItem[]; error?: string };
+        if (!response.ok) throw new Error(payload.error || "Could not load workflow records.");
+        if (!mounted) return;
+        if (active === "Agents & Tasks") setOfficeTasks(payload.tasks ?? []);
+        else setApprovalItems(payload.approvals ?? []);
+      })
+      .catch((error: unknown) => {
+        if (mounted) setWorkflowError(error instanceof Error ? error.message : "Workflow data is unavailable.");
+      })
+      .finally(() => { if (mounted) setWorkflowLoading(false); });
+    return () => { mounted = false; };
+  }, [active, workflowRefresh]);
+
+  async function decideApproval(id: string, decision: "approve" | "reject") {
+    const verb = decision === "approve" ? "approve this review request" : "reject this review request";
+    if (!window.confirm(`Are you sure you want to ${verb}? This only records a review decision; it will not execute the proposed action.`)) return;
+    setWorkflowError("");
+    setWorkflowNotice("");
+    try {
+      const response = await fetch(`/api/approvals/${id}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not record the decision.");
+      setWorkflowNotice(payload.message || "Decision recorded. No external action was executed.");
+      setWorkflowLoading(true);
+      setWorkflowRefresh((value) => value + 1);
+      setSummary(null);
+      void fetch("/api/dashboard/summary", { cache: "no-store" }).then(async (res) => {
+        if (res.ok) setSummary(await res.json() as DashboardSummary);
+      }).catch(() => {});
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Could not record the decision.");
+    }
+  }
+
   async function handleSignOut() {
     setSessionNotice("");
     try {
@@ -205,7 +283,7 @@ export default function OfficeDashboard() {
         setSessionNotice("Unable to sign out right now. Please retry.");
         return;
       }
-      window.location.assign("/login");
+      router.push("/login");
     } catch {
       setSessionNotice("Unable to reach the sign-out service. Please retry.");
     }
@@ -250,7 +328,19 @@ export default function OfficeDashboard() {
     }
   }
 
+  const refreshWorkflow = () => {
+    setWorkflowLoading(true);
+    setWorkflowError("");
+    setWorkflowNotice("");
+    setWorkflowRefresh((value) => value + 1);
+  };
+
   const selectNav = (label: string) => {
+    if (label === "Agents & Tasks" || label === "Approvals") {
+      setWorkflowLoading(true);
+      setWorkflowError("");
+      setWorkflowNotice("");
+    }
     setActive(label);
     setMobileNavOpen(false);
     setQuery("");
@@ -401,6 +491,16 @@ export default function OfficeDashboard() {
                 </form>
                 {commandError && <p className="command-error" role="alert">{commandError}</p>}
                 {commandResult && <PlanPanel result={commandResult}/>}
+              </section>}
+              {active === "Agents & Tasks" && <section className="workflow-panel">
+                <div className="section-heading"><div><h2>Saved task plans</h2><p>Latest tasks from the Supabase office database</p></div><button className="button button-secondary" onClick={refreshWorkflow}>Refresh</button></div>
+                {workflowLoading ? <p className="workflow-empty">Loading task records…</p> : workflowError ? <p className="command-error" role="alert">{workflowError}</p> : officeTasks.length === 0 ? <div className="workflow-empty"><strong>No saved tasks yet</strong><p>Use AI Command Center to generate and save a plan. This list never claims a plan has executed.</p></div> : <div className="workflow-list">{officeTasks.map((task) => <article className="workflow-item" key={task.id}><div className="workflow-item-main"><strong>{task.title}</strong><span>{task.department} · {new Date(task.created_at).toLocaleString("en-GB", { timeZone: "Asia/Dhaka" })}</span></div><div className="workflow-item-tags"><span className={"priority priority-" + task.priority}>{task.priority}</span><span className="workflow-status">{task.status.replace(/_/g, " ")}</span>{task.requires_approval && <span className="workflow-status">Review required</span>}</div></article>)}</div>}
+              </section>}
+              {active === "Approvals" && <section className="workflow-panel">
+                <div className="section-heading"><div><h2>Pending review requests</h2><p>Decisions are audited. No action executes from this queue.</p></div><button className="button button-secondary" onClick={() => setWorkflowRefresh((value) => value + 1)}>Refresh</button></div>
+                {workflowNotice && <p className="workflow-notice" role="status">{workflowNotice}</p>}
+                {workflowLoading ? <p className="workflow-empty">Loading approval requests…</p> : workflowError ? <p className="command-error" role="alert">{workflowError}</p> : approvalItems.length === 0 ? <div className="workflow-empty"><strong>No pending review requests</strong><p>Plans marked for human review will appear here after the latest database migration is applied.</p></div> : <div className="workflow-list">{approvalItems.map((item) => <article className="workflow-item approval-workflow-item" key={item.id}><div className="workflow-item-main"><strong>{item.review.title || item.task?.title || item.action_type.replace(/[._]/g, " ")}</strong><span>{item.explanation}</span>{item.review.summary && <span>{item.review.summary}</span>}{item.review.approvalReason && <span>Review reason: {item.review.approvalReason}</span>}{item.review.steps.length > 0 && <ol className="approval-review-steps">{item.review.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}<span>Risk: {item.risk_level} · Expires {new Date(item.expires_at).toLocaleString("en-GB", { timeZone: "Asia/Dhaka" })}</span></div>{session && ["owner", "administrator", "finance_reviewer"].includes(session.role) ? <div className="workflow-item-actions"><button className="button button-secondary" onClick={() => void decideApproval(item.id, "reject")}>Reject</button><button className="button button-primary" onClick={() => void decideApproval(item.id, "approve")}>Approve review</button></div> : <span className="workflow-status">View only</span>}</article>)}</div>}
+                <p className="module-note"><LockKeyhole size={15}/><span>Approval means a human reviewed this plan; it does not publish content, send messages, modify customer/payment records, deploy code, or run an agent.</span></p>
               </section>}
               <div className="section-heading"><div><h2>Recommended next steps</h2><p>These setup tasks are guidance, not completed work.</p></div></div>
               <div className="module-tasks">{suggestions.map((task, index) => <div className="module-task" key={task}><span className="task-index">{String(index + 1).padStart(2, "0")}</span><span>{task}</span><SetupBadge/></div>)}</div>
