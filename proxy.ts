@@ -70,7 +70,7 @@ export async function proxy(request: NextRequest) {
 
   if (profileError) {
     // If migrations or the profile table are missing, do not allow access.
-    return redirectTo(request, "/setup-required");
+    return denyRequest(request, 503, "Authorization services are unavailable.", "/setup-required");
   }
 
   if (!profile || profile.is_active !== true) {
@@ -82,8 +82,8 @@ export async function proxy(request: NextRequest) {
     { requested_permission: "dashboard.read" },
   );
 
-  if (permissionError) return redirectTo(request, "/setup-required");
-  if (canReadDashboard !== true) return redirectTo(request, "/no-access");
+  if (permissionError) return denyRequest(request, 503, "Authorization services are unavailable.", "/setup-required");
+  if (canReadDashboard !== true) return denyRequest(request, 403, "Dashboard access is not enabled for this account.", "/no-access");
 
   response.headers.set("Cache-Control", "private, no-store");
   return response;
