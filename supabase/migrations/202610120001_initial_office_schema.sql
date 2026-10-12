@@ -540,3 +540,109 @@ create index if not exists idx_campaigns_status_schedule on public.campaigns(sta
 create index if not exists idx_content_drafts_status_schedule on public.content_drafts(status, scheduled_at);
 
 -- updated_at timestamps should be assigned explicitly by server services or a future trigger.
+
+
+-- Create a planning record and its audit event in one transaction. This RPC
+-- does not execute downstream actions; it only persists a validated AI plan.
+create or replace function public.create_planned_task(
+  p_title text,
+  p_description text,
+  p_department text,
+  p_priority text,
+  p_requires_approval boolean,
+  p_result jsonb,
+  p_idempotency_key text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_task public.office_tasks%rowtype;
+  v_reused boolean := false;
+begin
+  if auth.uid() is null then
+    raise exception using errcode = '42501', message = 'Authentication required';
+  end if;
+
+  if not public.has_office_permission('tasks.create') then
+    raise exception using errcode = '42501', message = 'Task creation permission required';
+  end if;
+
+  if p_title is null or length(trim(p_title)) < 1 or length(p_title) > 160 then
+    raise exception using errcode = '22023', message = 'Invalid task title';
+  end if;
+  if p_description is null or length(p_description) > 3000 then
+    raise exception using errcode = '22023', message = 'Invalid task description';
+  end if;
+  if p_department not in ('support','marketing','creative','customers','finance','technical','operations') then
+    raise exception using errcode = '22023', message = 'Invalid department';
+  end if;
+  if p_priority not in ('low','medium','high','critical') then
+    raise exception using errcode = '22023', message = 'Invalid task priority';
+  end if;
+  if jsonb_typeof(p_result) <> 'object' or pg_column_size(p_result) > 16000 then
+    raise exception using errcode = '22023', message = 'Invalid task result';
+  end if;
+  if p_idempotency_key !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    raise exception using errcode = '22023', message = 'Invalid idempotency key';
+  end if;
+
+  insert into public.office_tasks (
+    created_by, title, description, department, status, priority,
+    requires_approval, idempotency_key, result_summary
+  ) values (
+    auth.uid(), trim(p_title), p_description, p_department, 'succeeded', p_priority,
+    coalesce(p_requires_approval, true), p_idempotency_key, p_result::text
+  )
+  on conflict (idempotency_key) do nothing
+  returning * into v_task;
+
+  if not found then
+    select * into v_task
+    from public.office_tasks t
+    where t.idempotency_key = p_idempotency_key
+      and t.created_by = auth.uid();
+
+    if v_task.id is null then
+      raise exception using errcode = '42501', message = 'Idempotency key belongs to another task';
+    end if;
+
+    v_reused := true;
+  else
+    insert into public.audit_logs (
+      actor_user_id, actor_type, event_type, resource_type, resource_id,
+      outcome, correlation_id, safe_metadata
+    ) values (
+      auth.uid(), 'user', 'task.plan.created', 'office_task', v_task.id::text,
+      'success', p_idempotency_key,
+      jsonb_build_object(
+        'title', left(v_task.title, 120),
+        'department', v_task.department,
+        'priority', v_task.priority,
+        'requires_approval', v_task.requires_approval,
+        'status', v_task.status
+      )
+    );
+  end if;
+
+  return jsonb_build_object(
+    'task', jsonb_build_object(
+      'id', v_task.id,
+      'title', v_task.title,
+      'department', v_task.department,
+      'status', v_task.status,
+      'priority', v_task.priority,
+      'requires_approval', v_task.requires_approval,
+      'created_at', v_task.created_at
+    ),
+    'plan', coalesce(v_task.result_summary::jsonb, '{}'::jsonb),
+    'reused', v_reused,
+    'note', 'Plan generated and saved. No external action was executed.'
+  );
+end;
+$$;
+
+revoke all on function public.create_planned_task(text,text,text,text,boolean,jsonb,text) from public, anon;
+grant execute on function public.create_planned_task(text,text,text,text,boolean,jsonb,text) to authenticated;
