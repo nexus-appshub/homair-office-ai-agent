@@ -223,6 +223,21 @@ begin
   if v_approval.status <> 'pending' then
     return jsonb_build_object('ok', false, 'code', 'not_pending', 'message', 'Approval request is no longer pending');
   end if;
+  if encode(digest(v_approval.action_payload::text, 'sha256'), 'hex') <> v_approval.payload_hash then
+    update public.approval_requests
+      set status = 'failed', decision_at = now(), approver_user_id = auth.uid(),
+          decision_note = 'Payload integrity check failed'
+      where id = p_approval_id;
+    insert into public.audit_logs (
+      actor_user_id, actor_type, event_type, resource_type, resource_id,
+      outcome, approval_id, safe_metadata
+    ) values (
+      auth.uid(), 'user', 'approval.payload_integrity_failed', 'approval_request', p_approval_id::text,
+      'failure', p_approval_id,
+      jsonb_build_object('reason', 'payload_hash_mismatch')
+    );
+    return jsonb_build_object('ok', false, 'code', 'payload_mismatch', 'message', 'Approval payload integrity check failed');
+  end if;
   if v_approval.expires_at <= now() then
     update public.approval_requests
       set status = 'expired', decision_at = now(), approver_user_id = auth.uid(),
