@@ -60,12 +60,59 @@ function StatCard({ label, note, icon: Icon }: { label: string; note: string; ic
   );
 }
 
+type PlanResponse = {
+  task: {
+    id: string;
+    title: string;
+    department: string;
+    status: string;
+    priority: string;
+    requires_approval: boolean;
+    created_at: string;
+  };
+  plan: {
+    title: string;
+    department: string;
+    summary: string;
+    steps: string[];
+    priority: string;
+    riskLevel: string;
+    requiresApproval: boolean;
+    approvalReason: string;
+    missingInputs: string[];
+    executionStatus: string;
+  };
+  reused?: boolean;
+  note: string;
+};
+
+function PlanPanel({ result }: { result: PlanResponse }) {
+  return (
+    <section className="plan-result" aria-live="polite">
+      <div className="plan-result-head">
+        <div><span className="eyebrow">AI PLAN SAVED</span><h3>{result.plan.title}</h3></div>
+        <span className={"risk-chip risk-" + result.plan.riskLevel}>{result.plan.riskLevel} risk</span>
+      </div>
+      <p className="plan-summary">{result.plan.summary}</p>
+      <div className="plan-meta"><span>Task {result.task.id.slice(0, 8)}</span><span>{result.task.department}</span><span>{result.reused ? "Existing request" : "Saved and audited"}</span></div>
+      <h4>Proposed steps</h4>
+      <ol className="plan-steps">{result.plan.steps.map((step, index) => <li key={index}><span>{index + 1}</span><p>{step}</p></li>)}</ol>
+      {result.plan.requiresApproval && <div className="plan-approval"><LockKeyhole size={16}/><div><strong>Human approval required before consequential actions</strong><p>{result.plan.approvalReason || "Review the plan before carrying out any external action."}</p></div></div>}
+      {result.plan.missingInputs.length > 0 && <div className="missing-inputs"><strong>Inputs to confirm</strong><ul>{result.plan.missingInputs.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+      <p className="plan-no-action"><ShieldCheck size={14}/>{result.note}</p>
+    </section>
+  );
+}
+
 export default function OfficeDashboard() {
   const [active, setActive] = useState("Overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [command, setCommand] = useState("");
   const [showSetup, setShowSetup] = useState(false);
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [commandError, setCommandError] = useState("");
+  const [commandResult, setCommandResult] = useState<PlanResponse | null>(null);
   const allItems = useMemo(() => navGroups.flatMap((group) => group.items.map((item) => item.label)), []);
   const activeModule = moduleDescriptions[active];
   const ModuleIcon = activeModule?.icon ?? Settings2;
@@ -75,6 +122,35 @@ export default function OfficeDashboard() {
     "Connect the Telegram support bot after setting its webhook secret",
   ];
   const matchingItems = allItems.filter((item) => item.toLowerCase().includes(query.toLowerCase()));
+
+  async function submitCommand() {
+    const prompt = command.trim();
+    if (prompt.length < 3 || commandLoading) return;
+    setCommandLoading(true);
+    setCommandError("");
+    setCommandResult(null);
+    try {
+      const response = await fetch("/api/ai/plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ prompt }),
+      });
+      const payload = await response.json() as PlanResponse & { error?: string };
+      if (!response.ok) {
+        setCommandError(payload.error || "The task could not be planned. Check authentication and service configuration.");
+        return;
+      }
+      setCommandResult(payload);
+      setActive("AI Command Center");
+    } catch {
+      setCommandError("Could not reach the AI planning service. Check the deployment and try again.");
+    } finally {
+      setCommandLoading(false);
+    }
+  }
 
   const selectNav = (label: string) => {
     setActive(label);
@@ -134,7 +210,7 @@ export default function OfficeDashboard() {
         <div className="page-content">
           <div className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line"/> OPERATIONS OVERVIEW</div><h1>{active === "Overview" ? "Good to have you here." : activeModule?.title ?? active}</h1><p className="page-subtitle">{active === "Overview" ? "Your Home Air operations, coordinated in one intelligent workspace." : activeModule?.description ?? "Manage your Home Air workspace configuration and connected services."}</p></div>
-            <div className="welcome-actions"><SetupBadge/><button className="button button-primary" onClick={() => { setActive("AI Command Center"); setCommand(""); }}><Plus size={16}/> New task</button></div>
+            <div className="welcome-actions"><SetupBadge/><button className="button button-primary" onClick={() => { setActive("AI Command Center"); setCommand(""); setCommandError(""); setCommandResult(null); }}><Plus size={16}/> New task</button></div>
           </div>
 
           <section className="setup-alert">
@@ -163,9 +239,9 @@ export default function OfficeDashboard() {
               <div className="content-grid">
                 <section className="card-surface command-card">
                   <div className="card-header"><div className="card-icon orange-icon"><Sparkles size={18}/></div><div><h2>AI Command Center</h2><p>Describe what you need done</p></div><span className="soon-badge">Setup required</span></div>
-                  <div className="command-entry"><textarea aria-label="Describe a task" value={command} onChange={(event) => setCommand(event.target.value)} placeholder="e.g. Prepare a Bengali Home Air feature announcement and a 9:16 reel script..." rows={3} /><button className="send-button" aria-label="Prepare task" onClick={() => setShowSetup(true)} title="AI task execution becomes available after API and authentication setup"><Send size={17}/></button></div>
-                  <div className="command-foot"><span><LockKeyhole size={13}/> Task execution is disabled until server-side AI and approval controls are configured.</span></div>
-                  <div className="suggestion-list">{["Draft a 7-day marketing plan", "Summarize open support issues", "Prepare daily operations report"].map((suggestion) => <button key={suggestion} onClick={() => { setCommand(suggestion); setActive("AI Command Center"); }}><span>{suggestion}</span><ArrowUpRight size={14}/></button>)}</div>
+                  <div className="command-entry"><textarea aria-label="Describe a task" value={command} onChange={(event) => setCommand(event.target.value)} placeholder="e.g. Prepare a Bengali Home Air feature announcement and a 9:16 reel script..." rows={3} /><button className="send-button" type="button" aria-label="Create AI plan" disabled={commandLoading || command.trim().length < 3} onClick={() => void submitCommand()} title="Generate and save a plan only"><Send size={17}/></button></div>
+                  <div className="command-foot"><span><LockKeyhole size={13}/> This creates a plan only. It does not publish, message, change customer/payment records, or deploy.</span></div>{commandError && <p className="command-error" role="alert">{commandError}</p>}{commandResult && <PlanPanel result={commandResult}/ >}
+                  <div className="suggestion-list">{["Draft a 7-day marketing plan", "Summarize open support issues", "Prepare daily operations report"].map((suggestion) => <button key={suggestion} onClick={() => { setCommand(suggestion); setCommandError(""); setCommandResult(null); setActive("AI Command Center"); }}><span>{suggestion}</span><ArrowUpRight size={14}/></button>)}</div>
                 </section>
 
                 <section className="card-surface readiness-card">
@@ -199,6 +275,15 @@ export default function OfficeDashboard() {
           ) : (
             <section className="module-page card-surface">
               <div className="module-banner"><div className="module-banner-icon"><ModuleIcon size={25}/></div><div><span className="eyebrow">HOME AIR DEPARTMENT</span><h2>{activeModule?.title ?? active}</h2><p>{activeModule?.description ?? "Workspace and integration settings will be configured here."}</p></div></div>
+              {active === "AI Command Center" && <section className="ai-plan-workbench">
+                <form onSubmit={(event) => { event.preventDefault(); void submitCommand(); }}>
+                  <label htmlFor="module-command">Describe the task you want Home Air AI Office to plan</label>
+                  <textarea id="module-command" value={command} onChange={(event) => setCommand(event.target.value)} maxLength={2000} rows={4} placeholder="Example: Prepare a seven-day Bengali and English campaign for a verified Home Air app update. Include post captions, a 9:16 reel script, and review steps." />
+                  <div className="workbench-footer"><span>Maximum 2,000 characters · Planning only · No external action</span><button className="button button-primary" type="submit" disabled={commandLoading || command.trim().length < 3}>{commandLoading ? "Planning..." : "Generate plan"} <Sparkles size={15}/></button></div>
+                </form>
+                {commandError && <p className="command-error" role="alert">{commandError}</p>}
+                {commandResult && <PlanPanel result={commandResult}/>}
+              </section>}
               <div className="section-heading"><div><h2>Recommended next steps</h2><p>These setup tasks are guidance, not completed work.</p></div></div>
               <div className="module-tasks">{suggestions.map((task, index) => <div className="module-task" key={task}><span className="task-index">{String(index + 1).padStart(2, "0")}</span><span>{task}</span><SetupBadge/></div>)}</div>
               <div className="module-note"><LockKeyhole size={16}/><span>This module is in setup mode. Real operations remain disabled until authentication, role permissions, data sources, and required integrations have been implemented and verified.</span></div>
