@@ -39,9 +39,14 @@ These are foundation capabilities, not evidence that a real Supabase project has
 
 - [ ] Ticketing, FAQ knowledge base, Bengali/English drafts, escalation.
 - [ ] Telegram webhook authenticity validation, deduplication and rate limiting.
-- [ ] Connect a verified customer/package database and map its schema.
-- [ ] Payment verification using provider records; manual review when unavailable.
-- [ ] Role-protected package, subscription, order, and payment workflows.
+- [ ] Treat Supabase as the future business system of record only after the owner approves a staged migration.
+- [ ] Inventory Firebase/Firestore/Railway schemas; map external IDs and field semantics without changing production.
+- [ ] Back up and record baseline counts, then dry-run an import into isolated staging; reconcile duplicates, statuses, timestamps, amounts, and relationships.
+- [ ] Verify RLS/role behavior with representative roles and run record-level reconciliation before requesting cutover approval.
+- [ ] Fix and independently review existing Home Air TV backend JWT signature validation and hard-coded fallback credentials before any privileged source connection.
+- [ ] Owner-approved maintenance-window cutover with rollback checkpoint, no dual-writes, and post-cutover reconciliation.
+- [ ] Payment verification using trusted provider records; manual review when unavailable.
+- [ ] Role-protected package, subscription, order, and payment workflows only after the cutover is verified.
 
 ## Phase 4 — Marketing and creative studio
 
