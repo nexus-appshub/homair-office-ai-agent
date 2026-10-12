@@ -229,9 +229,6 @@ export default function OfficeDashboard() {
   useEffect(() => {
     if (active !== "Agents & Tasks" && active !== "Approvals") return;
     let mounted = true;
-    setWorkflowLoading(true);
-    setWorkflowError("");
-    setWorkflowNotice("");
     const endpoint = active === "Agents & Tasks" ? "/api/tasks?limit=50" : "/api/approvals?status=pending&limit=50";
     void fetch(endpoint, { cache: "no-store" })
       .then(async (response) => {
@@ -262,6 +259,7 @@ export default function OfficeDashboard() {
       const payload = await response.json() as { message?: string; error?: string };
       if (!response.ok) throw new Error(payload.error || "Could not record the decision.");
       setWorkflowNotice(payload.message || "Decision recorded. No external action was executed.");
+      setWorkflowLoading(true);
       setWorkflowRefresh((value) => value + 1);
       setSummary(null);
       void fetch("/api/dashboard/summary", { cache: "no-store" }).then(async (res) => {
@@ -328,7 +326,19 @@ export default function OfficeDashboard() {
     }
   }
 
+  const refreshWorkflow = () => {
+    setWorkflowLoading(true);
+    setWorkflowError("");
+    setWorkflowNotice("");
+    setWorkflowRefresh((value) => value + 1);
+  };
+
   const selectNav = (label: string) => {
+    if (label === "Agents & Tasks" || label === "Approvals") {
+      setWorkflowLoading(true);
+      setWorkflowError("");
+      setWorkflowNotice("");
+    }
     setActive(label);
     setMobileNavOpen(false);
     setQuery("");
@@ -481,7 +491,7 @@ export default function OfficeDashboard() {
                 {commandResult && <PlanPanel result={commandResult}/>}
               </section>}
               {active === "Agents & Tasks" && <section className="workflow-panel">
-                <div className="section-heading"><div><h2>Saved task plans</h2><p>Latest tasks from the Supabase office database</p></div><button className="button button-secondary" onClick={() => setWorkflowRefresh((value) => value + 1)}>Refresh</button></div>
+                <div className="section-heading"><div><h2>Saved task plans</h2><p>Latest tasks from the Supabase office database</p></div><button className="button button-secondary" onClick={refreshWorkflow}>Refresh</button></div>
                 {workflowLoading ? <p className="workflow-empty">Loading task records…</p> : workflowError ? <p className="command-error" role="alert">{workflowError}</p> : officeTasks.length === 0 ? <div className="workflow-empty"><strong>No saved tasks yet</strong><p>Use AI Command Center to generate and save a plan. This list never claims a plan has executed.</p></div> : <div className="workflow-list">{officeTasks.map((task) => <article className="workflow-item" key={task.id}><div className="workflow-item-main"><strong>{task.title}</strong><span>{task.department} · {new Date(task.created_at).toLocaleString("en-GB", { timeZone: "Asia/Dhaka" })}</span></div><div className="workflow-item-tags"><span className={"priority priority-" + task.priority}>{task.priority}</span><span className="workflow-status">{task.status.replace(/_/g, " ")}</span>{task.requires_approval && <span className="workflow-status">Review required</span>}</div></article>)}</div>}
               </section>}
               {active === "Approvals" && <section className="workflow-panel">
