@@ -24,6 +24,24 @@ No service-role key is currently required by the dashboard session or aggregate-
 
 The current AI endpoint generates and stores a plan only. It does not execute external actions.
 
+## Existing Home Air TV system discovered during repository review
+
+The existing `nexus-appshub/x-space-xubitv` repository appears to use Firebase Realtime Database, Firestore, and a Railway backend. The code contains VIP configuration and VIP-order workflows, including route handlers for VIP status/config/order lookup and an order-approval operation.
+
+This is a candidate integration, not yet an approved or security-verified API contract. Before using it:
+- Review the route-level authentication and authorization for each endpoint.
+- Confirm whether order/customer data is read from durable storage or an in-memory collection.
+- Verify endpoint response schemas, error behavior, and user/administrator identity checks.
+- Create a restricted server-to-server integration credential or signed authentication mechanism if the existing backend supports one; do not rely on caller-supplied email alone.
+- Start with read-only lookups. Do not enable VIP grants/extensions/suspensions or payment approval until exact-action approval, permissions, idempotency, and audit logging are implemented and tested.
+
+**Recommended ownership boundary, pending owner confirmation:**
+- Keep Supabase as the Home Air AI Office store for office staff login, office roles, tasks, approvals, campaign drafts, integration health, and office audit events.
+- Keep the existing Home Air TV data source as the authority for existing customers, packages/VIP plans, subscriptions/entitlements, and payment/order records if that is where those records are currently maintained.
+- Do not migrate, mirror, or write business records until the source of truth is explicitly confirmed. If summary data is copied into the office database later, retain external IDs, timestamps, provenance, and reconciliation behavior.
+
+The owner must confirm this boundary before we implement the first business-data adapter.
+
 ## Customer, package, subscription, order, and payment source
 
 Before these workflows are implemented, identify the single authoritative data source.
